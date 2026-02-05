@@ -1,11 +1,29 @@
 const express = require('express')
 const books = require('./data/books.js')
+const bcrypt = require('bcrypt')
+const users = require('./auth-users.js').users
 
-const public_users = express()
+const public_users = express.Router();
 
-//GET ALL BOOKs
+//GET ALL BOOKS
 public_users.get('/', (req, res)=> {
     res.json(books)
+})
+
+//PUBLIC USERS CAN CREATE AN ACCOUNT TO REGISTER AND ADD REVIEWS
+public_users.post('/register', async (req, res) => {
+    const user = {username: req.body.username, password: req.body.password}
+    const usedNames =  users.find(u => u.username === user.username);
+    //CHECK IF USER ALREADY EXISTS OR REGISTERED USER IS TRYING TO ENTER
+    if (usedNames) return res.status(409).json({message: "Username already taken, please choose another"});
+    let salt = await bcrypt.genSalt(10);
+    let password = await bcrypt.hash(user.password, salt)
+    user.password = password;
+    //
+    users.push(user);
+    console.log(user)
+    return res.status(201).json({message: "User registered successfully"});
+    
 })
 
 //GET BOOK BY AUTHOR
@@ -47,9 +65,9 @@ public_users.get('/title/:title', (req, res) => {
     const found_book = Object.values(books).find(book => book['title'] === title);
 
     if (found_book) {
-        return res.status(200).json(`The book ${title} with Author  ${found_book['author']} has been found`);
+        return res.status(200).json(`The book '${found_book['title']}' with Author  '${found_book['author']}' has been found`);
     }
-    return res.status(404).json({message: `No book found with title ${title}`});
+    return res.status(404).json({message: `No book found with title '${title}'`});
 })
 
 //GET REVIEWS ON BOOKS
