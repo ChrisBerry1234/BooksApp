@@ -37,18 +37,21 @@ const addUserReview = (ISBN, username, review) => {
   //IF USER HAS NO REVIEWS, CREATE A NEW ARRAY TO HOLD USER REVIEWS
   if(!Array.isArray(foundUser.reviews)) foundUser.reviews = [];
 
+  const reviews = foundUser.reviews 
+
   //LOOP THROUGH USER ARRAY OF REVIEWS TO FIND SPECIFIC ISBN TO WHICH WE WANT TO ADD REVIEWS
-  const user_review = foundUser.reviews.find(review => review.isbn === ISBN)
-  if (user_review){
-    //UPDATE THAT REVIEW
+  const user_review = reviews.find(review => review.isbn === ISBN)
+  //UPDATE THAT REVIEW
+  if(user_review){
     user_review.content = review;
     return {"success": true, "message": "Review updated"};
   }
-  //ELSE IF NO ISBN KEY, MAKE A NEW ENTRY FOR THIS REVIEW
-  const newReview = {isbn: ISBN, content: review}
-  foundUser.reviews.push(newReview)
-  return {"success": true, "message": "Review added"};
+  else{
+    const newReview = {isbn: ISBN, content: review}
+    foundUser.reviews.push(newReview)
+    return {"success": true, "message": "Review added"};
   }
+}
 
 auth.use('/auth', (req, res, next) => {
   const authHeader = req.headers.authorization;
