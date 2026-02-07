@@ -9,9 +9,11 @@ const auth = express();
 const PORT = 3000;
 
 const SECRET_KEY = process.env.INTERNAL_SECRET_KEY;
+const REFRESH_SECRET_KEY = process.env.INTERNAL_REFRESH_TOKEN_SECRET_KEY;
 
 //Array to hold registered users
-let users = [];
+let users = []; //DEVELOPMENT ENVIORNMENT 
+let refreshTokens = [];
 
 //MIDDLEWARE PARSING 
 auth.use(express.json())
@@ -53,6 +55,7 @@ const addUserReview = (ISBN, username, review) => {
   }
 }
 
+//AUTH MIDDLEWARE
 auth.use('/auth', (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -78,12 +81,13 @@ auth.post('/customer/login', async (req, res)=> {
   const result = await authenticateUser(user);
   //IF USER IS AUTHENTICATED
   if (result.success === true){
-    const accessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '1h'})
-    return res.status(200).json({message: `${result.message}`, token: accessToken});
+    const accessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '10min'})
+    const refreshToken = jwt.sign({username: user.username}, REFRESH_SECRET_KEY, {expiresIn: '7d'})
+    refreshTokens.push(refreshToken);
+    return res.status(200).json({message: `${result.message}`, token: accessToken, refreshToken: refreshToken});
   }
   return res.status(401).json({message: `${result.message}`})
 })
-
 
 //AUTHENTICATED USERS WILL BE ABLE TO POST REVIEWS FOR SPECIFIC BOOK
 auth.post('/auth/review/:isbn', async (req, res) => {
@@ -113,6 +117,32 @@ auth.post('/auth/review/:isbn', async (req, res) => {
 auth.get('/auth/debug/users', (req, res) => {
   res.json(users);
 });
+
+auth.post('/token', (req, res) => {
+  //GRAB REFRESH TOKEN FROM BODY THAT WAS SENT UPON USER AUTHENTICATIO
+  const refreshToken = req.body.token;
+  if (!refreshToken) return res.status(401).json({message: "No refresh token"})
+  //CHECK IF REFRESH TOKEN IS VALID
+  if (!refreshTokens.includes(refreshToken)) return res.status(403).json({message: "Invalid refresh token"})
+  //IF REFRESH TOKEN VALID, THEN VERIFY IT AND CREATE NEW ACCESS TOKEN
+  jwt.verify(refreshToken, REFRESH_SECRET_KEY, (err, user) => {
+    if(err){
+      return res.status(403).json({message: "Invalid or expired refresh token"})
+    }
+  //ASSIGN THE VALID REFRESH TOKEN AS THE NEWLY ACCESS TOKEN AND ASSIGN IN SO USER CAN USE FOR NEW REQUEST
+  const accessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '10min'})
+  return res.status(200).json({accessToken: accessToken})
+})
+})
+
+//PREVENT USER FROM CONSTANTLY USING REFRESH TOKENS
+auth.delete('/auth/logout', (req, res) => {
+  //DELETING REFRESH TOKENS AND CREATING A NEW ARRAY NOT INCLUDING THE REFRESH TOKEN 
+  refreshTokens = refreshTokens.filter(token => token !== req.body.token)
+  //USER CAN NO LONGER USE REFRESH TOKEN TO ACCESS THE APPLICATION
+  return res.status(200).json({message: "Logged out successfully"})
+})
+
 
 auth.listen(PORT, () => {
     console.log(`Auth Server is running on port ${PORT}`);

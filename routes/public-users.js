@@ -33,7 +33,7 @@ public_users.get('/author/:author', (req, res) => {
     const filteredBooks = [];
 
     //Object.entries will return an array of a given. We can use array methods
-    Object.entries(books).forEach(([key, book]) => {
+    Object.values(books).forEach(book => {
         if (book['author'] === author){
             filteredBooks.push(book);
         }
