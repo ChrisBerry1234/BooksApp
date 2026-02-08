@@ -14,6 +14,7 @@ const REFRESH_SECRET_KEY = process.env.INTERNAL_REFRESH_TOKEN_SECRET_KEY;
 //Array to hold registered users
 let users = []; //DEVELOPMENT ENVIORNMENT 
 let refreshTokens = [];
+let activeAccessTokens = []
 
 //MIDDLEWARE PARSING 
 auth.use(express.json())
@@ -56,7 +57,8 @@ const addUserReview = (ISBN, username, review) => {
 }
 
 //AUTH MIDDLEWARE
-auth.use('/auth', (req, res, next) => {
+const verify = (req, res, next) => {
+
   const authHeader = req.headers.authorization;
   if (!authHeader) {
   return res.status(401).json({ message: "User has not been authenticated" });
@@ -65,6 +67,9 @@ auth.use('/auth', (req, res, next) => {
   if (!token) {
     return res.status(401).json({message: "User has not been authenticated"})
   }
+  if (!activeAccessTokens.includes(token)) {
+    return res.status(403).json({message: "Invalid access token"})
+  }
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if(err){
       return res.status(403).json({message: "Invalid or expired token"})
@@ -72,7 +77,7 @@ auth.use('/auth', (req, res, next) => {
     req.user = user;
     next();
   })
-})
+}
 
 auth.post('/customer/login', async (req, res)=> {
   //CREATE AN OBJECT FOR USER
@@ -83,6 +88,7 @@ auth.post('/customer/login', async (req, res)=> {
   if (result.success === true){
     const accessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '10min'})
     const refreshToken = jwt.sign({username: user.username}, REFRESH_SECRET_KEY, {expiresIn: '7d'})
+    activeAccessTokens.push(accessToken);
     refreshTokens.push(refreshToken);
     return res.status(200).json({message: `${result.message}`, token: accessToken, refreshToken: refreshToken});
   }
@@ -90,7 +96,7 @@ auth.post('/customer/login', async (req, res)=> {
 })
 
 //AUTHENTICATED USERS WILL BE ABLE TO POST REVIEWS FOR SPECIFIC BOOK
-auth.post('/auth/review/:isbn', async (req, res) => {
+auth.post('/auth/review/:isbn', verify, async (req, res) => {
   const ISBN = req.params.isbn;
   if(!ISBN) return res.status(400).json({message: "Missing ISBN parameter"});
   //SEARCH FOR BOOK
@@ -114,12 +120,13 @@ auth.post('/auth/review/:isbn', async (req, res) => {
   }
 })
 
-auth.get('/auth/debug/users', (req, res) => {
+auth.get('/auth/debug/users', verify, (req, res) => {
   res.json(users);
 });
 
-auth.post('/token', (req, res) => {
-  //GRAB REFRESH TOKEN FROM BODY THAT WAS SENT UPON USER AUTHENTICATIO
+auth.post('/auth/token', (req, res) => {
+  //GRAB REFRESH TOKEN FROM BODY THAT WAS SENT UPON USER AUTHENTICATION
+  const prevAccessToken = req.headers.authorization.split(' ')[1];
   const refreshToken = req.body.token;
   if (!refreshToken) return res.status(401).json({message: "No refresh token"})
   //CHECK IF REFRESH TOKEN IS VALID
@@ -130,15 +137,23 @@ auth.post('/token', (req, res) => {
       return res.status(403).json({message: "Invalid or expired refresh token"})
     }
   //ASSIGN THE VALID REFRESH TOKEN AS THE NEWLY ACCESS TOKEN AND ASSIGN IN SO USER CAN USE FOR NEW REQUEST
-  const accessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '10min'})
-  return res.status(200).json({accessToken: accessToken})
+  const newAccessToken = jwt.sign({username: user.username}, SECRET_KEY, {expiresIn: '10min'})
+  const newrefreshToken = jwt.sign({username: user.username}, REFRESH_SECRET_KEY, {expiresIn: '7d'})
+  activeAccessTokens = activeAccessTokens.filter(token => token !== prevAccessToken);
+  activeAccessTokens.push(newAccessToken);
+  refreshTokens.push(newrefreshToken);
+  return res.status(200).json({accessToken: newAccessToken, refreshToken: newrefreshToken})
 })
 })
 
 //PREVENT USER FROM CONSTANTLY USING REFRESH TOKENS
 auth.delete('/auth/logout', (req, res) => {
   //DELETING REFRESH TOKENS AND CREATING A NEW ARRAY NOT INCLUDING THE REFRESH TOKEN 
-  refreshTokens = refreshTokens.filter(token => token !== req.body.token)
+  const refreshToken = req.body.token;
+  const accessToken = req.headers.authorization.split(' ')[1];
+  //
+  refreshTokens = refreshTokens.filter(token => token !== refreshToken)
+  activeAccessTokens = activeAccessTokens.filter(token => token !== accessToken)
   //USER CAN NO LONGER USE REFRESH TOKEN TO ACCESS THE APPLICATION
   return res.status(200).json({message: "Logged out successfully"})
 })
